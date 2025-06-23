@@ -177,8 +177,118 @@
   <div class="content">
     <h1>Background Changer</h1>
     <p>Upload your image (under 2MB) and get it processed with a Mira character background.</p>
-    <!-- rest of your input, buttons, image preview and JS goes here -->
+    <input type="file" id="fileInput" accept="image/*" style="display: none;" />
+    <button class="upload-btn" id="uploadBtn" onclick="document.getElementById('fileInput').click();">UPLOAD IMAGE</button>
+
+    <div id="imageContainer" class="result-img" style="display: none;">
+      <img id="processedImage" src="" alt="Processed Image" style="max-width: 100%;" />
+      <div class="button-row">
+        <a id="downloadLink" class="action-btn" download="mira_image.png">DOWNLOAD IMAGE</a>
+      </div>
+    </div>
+
+    <div class="generated" id="statusText"></div>
+
+    <div class="links">
+      <a href="https://mira.network" target="_blank">Website</a>
+      <a href="https://discord.com/invite/mira-network" target="_blank">Discord</a>
+      <a href="https://x.com/Mira_Network" target="_blank">X</a>
+    </div>
   </div>
 
+  <script>
+    const fileInput = document.getElementById('fileInput');
+    const processedImage = document.getElementById('processedImage');
+    const imageContainer = document.getElementById('imageContainer');
+    const downloadLink = document.getElementById('downloadLink');
+    const statusText = document.getElementById('statusText');
+    const uploadBtn = document.getElementById('uploadBtn');
+
+    async function compressImage(file) {
+      return new Promise((resolve) => {
+        const img = new Image();
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          img.src = e.target.result;
+          img.onload = () => {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            const maxWidth = 1024;
+            const maxHeight = 1024;
+            let width = img.width;
+            let height = img.height;
+            if (width > maxWidth || height > maxHeight) {
+              const ratio = Math.min(maxWidth / width, maxHeight / height);
+              width *= ratio;
+              height *= ratio;
+            }
+            canvas.width = width;
+            canvas.height = height;
+            ctx.drawImage(img, 0, 0, width, height);
+            canvas.toBlob((blob) => resolve(new File([blob], file.name, { type: 'image/png' })), 'image/png', 0.7);
+          };
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+
+    fileInput.addEventListener('change', async () => {
+      const file = fileInput.files[0];
+      if (!file) return;
+
+      if (file.size > 2 * 1024 * 1024) {
+        statusText.textContent = 'Error: Image must be under 2MB';
+        fileInput.value = '';
+        return;
+      }
+
+      uploadBtn.disabled = true;
+      uploadBtn.textContent = 'COMPRESSING...';
+      const compressedFile = await compressImage(file);
+
+      uploadBtn.textContent = 'PROCESSING...';
+      statusText.textContent = 'Processing... please wait ⏳';
+      imageContainer.style.display = 'none';
+
+      const formData = new FormData();
+      formData.append('file', compressedFile);
+
+      try {
+        const res = await fetch('./api/process', {
+          method: 'POST',
+          body: formData
+        });
+
+        const data = await res.json();
+
+        if (data.image_url) {
+          const imgCheck = new Promise((resolve, reject) => {
+            processedImage.onload = () => resolve();
+            processedImage.onerror = () => reject();
+            processedImage.src = data.image_url;
+          });
+
+          try {
+            await imgCheck;
+            downloadLink.href = data.image_url;
+            imageContainer.style.display = 'block';
+            statusText.textContent = 'Done! 🎉';
+          } catch {
+            statusText.textContent = 'Error: Processed image is no longer available 😢';
+          }
+        } else {
+          statusText.textContent = 'Error: ' + (data.error || 'Unknown');
+        }
+      } catch (err) {
+        statusText.textContent = 'Failed to process image 😢';
+        console.error(err);
+      } finally {
+        uploadBtn.disabled = false;
+        uploadBtn.textContent = 'UPLOAD IMAGE';
+        fileInput.value = '';
+        setTimeout(() => { uploadBtn.disabled = false; }, 5000);
+      }
+    });
+  </script>
 </body>
 </html>
